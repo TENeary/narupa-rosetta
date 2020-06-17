@@ -1,4 +1,4 @@
-
+# Copyright (c) Tim Neary, University of Bristol. Github username: TENeary, contact: tn15550@bristol.ac.uk
 # Licensed under the GPL. See License.txt in the project root for license information.
 
 from typing import Dict
