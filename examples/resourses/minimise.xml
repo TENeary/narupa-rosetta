@@ -1,0 +1,17 @@
+<ROSETTASCRIPTS>
+    <SCOREFXNS>
+    </SCOREFXNS>
+    <RESIDUE_SELECTORS>
+    </RESIDUE_SELECTORS>
+    <TASKOPERATIONS>
+    </TASKOPERATIONS>
+    <FILTERS>
+    </FILTERS>
+    <MOVERS>
+      <MinMover name="min" bb="true" chi="true" />
+    </MOVERS>
+    <PROTOCOLS>
+      <Add mover_name="min" />
+    </PROTOCOLS>
+    <OUTPUT />
+</ROSETTASCRIPTS>

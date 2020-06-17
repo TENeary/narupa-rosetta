@@ -1,0 +1,17 @@
+<ROSETTASCRIPTS>
+    <SCOREFXNS>
+    </SCOREFXNS>
+    <RESIDUE_SELECTORS>
+    </RESIDUE_SELECTORS>
+    <TASKOPERATIONS>
+    </TASKOPERATIONS>
+    <FILTERS>
+    </FILTERS>
+    <MOVERS>
+      <PackRotamersMover name="pack" />
+    </MOVERS>
+    <PROTOCOLS>
+      <Add mover_name="pack" />
+    </PROTOCOLS>
+    <OUTPUT />
+</ROSETTASCRIPTS>
