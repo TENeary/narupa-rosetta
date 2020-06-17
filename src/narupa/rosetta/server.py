@@ -7,11 +7,10 @@ from narupa.app import NarupaFrameApplication
 from .rosetta_command_service import RosettaServer
 from narupa.core import DEFAULT_SERVE_ADDRESS
 from narupa.essd import DiscoveryServer
+from .rosetta_communicator import DEFAULT_ROSETTA_ADDRESS, DEFAULT_ROSETTA_PORT
 
 DEFAULT_NARUPA_PORT = 38801
 MULTIPLAYER_SERVICE_NAME = "multiplayer"
-DEFAULT_ROSETTA_ADDRESS = "localhost"
-DEFAULT_ROSETTA_PORT = 43234
 
 def start_rosetta_server_and_discovery(address : Optional[str] = None,
                                        port : Optional[int] = None,
