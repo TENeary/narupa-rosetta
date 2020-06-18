@@ -6,10 +6,13 @@ from narupa.app import NarupaFrameApplication
 from narupa.command.command_service import CommandService
 
 # Rosetta required imports
-from .rosetta_communicator import RosettaClient, DEFAULT_ROSETTA_ADDRESS, DEFAULT_ROSETTA_PORT
+from .rosetta_communicator import RosettaClient, DEFAULT_ROSETTA_ADDRESS, DEFAULT_ROSETTA_PORT, FormatError
 from .command_util import ( RosettaCommand, EchoMessage, CloseServer,
                             SendPose, RequestPose, RequestPoseList,
                             SendAndParseXml )
+from .trajectory import TrajectoryManager
+from time import sleep
+from .pdb_util import convert_pdb_string_to_framedata
 
 # For iMD client controls
 from narupa.trajectory.frame_server import PLAY_COMMAND_KEY, RESET_COMMAND_KEY, STEP_COMMAND_KEY, PAUSE_COMMAND_KEY
@@ -31,7 +34,7 @@ class RosettaRunner:
     self._server = self._app.server                     # For convenience
     self._rosetta = RosettaClient( rosetta_server_address=rosetta_server_address, rosetta_server_port=rosetta_server_port )
     self._rosetta.connect()
-    # self._trajectory = TODO trajectory manager, i.e. play frames reset frames etc.
+    self._trajectory = TrajectoryManager()
     # self._pdb_converter = TODO pdb->framedata converter manager needs to keep track of proteins to see what needs to be rebuilt each frame
 
     self._ros_cmds = {}
@@ -57,8 +60,8 @@ class RosettaRunner:
     # Add commands specific to communicating with Rosetta
     self._server.register_command( "ros/echo_message", self.run_rosetta_command,
                                        { "ros_cmd" : "ros/echo_message", "msg" : "TEST" } )
-    self._server.register_command("ros/close_server", self.run_rosetta_command,
-                                       { "ros_cmd": "ros/close_server" })
+    self._server.register_command( "ros/close_server", self.run_rosetta_command,
+                                       { "ros_cmd": "ros/close_server" } )
     self._server.register_command( "ros/send_pose", self.run_rosetta_command,
                                        { "ros_cmd" : "ros/send_pose", "pose_to_store" : None } )
     self._server.register_command( "ros/request_pose", self.request_pose, # For speed reasons getting a pdb will avoid dict look ups.
@@ -72,10 +75,15 @@ class RosettaRunner:
 
     # Add commands for manipulating in progress viewing with iMD VR client.
     # To do implement play back etc.
-    # self._server.register_command( PLAY_COMMAND_KEY )
-    # self._server.register_command( PAUSE_COMMAND_KEY )
-    # self._server.register_command( RESET_COMMAND_KEY )
-    # self._server.register_command( STEP_COMMAND_KEY )
+    self._server.register_command( PLAY_COMMAND_KEY, self._trajectory.play() )
+    self._server.register_command( PAUSE_COMMAND_KEY, self._trajectory.pause() )
+    self._server.register_command( RESET_COMMAND_KEY, self._trajectory.reset() )
+    self._server.register_command( STEP_COMMAND_KEY, self._trajectory.step() )
+
+    # Compound commands to run a set of different rosetta commands together
+    self._server.register_command( "ros/run_rosetta_script", self.run_rosetta_script,
+                                   { "pdb" : None, "pdb_name" : None, "xml" : None,
+                                     "num_frames" : 10000, "request_interval" : 0.01, "view_in_progress" : False } )
 
   def run_rosetta_command(self,
                           ros_cmd : str = "None",
@@ -147,6 +155,44 @@ class RosettaRunner:
       return self._ros_cmds[ros_cmd_name]._execute.__annotations__
     else:
       raise KeyError( "Command not recognised" )
+
+  def run_rosetta_script( self,
+                          pdb : str = None,
+                          pdb_name : str = None,
+                          xml : str = None,
+                          num_frames : int = 10000, # TODO implement a way to continue past this threshold if desired
+                          request_interval : float = 0.01,
+                          view_in_progress : bool = False ): # TODO implement proper inprogress viewing
+
+    # In all cases want to always use Rosetta pdbs where possible. This also doubles as a check to see whether the pose actually exists
+    if not pdb and not pdb_name:
+      raise ValueError( "PDB file and pose name have not been specified, aborting." )
+    elif not pdb and pdb_name:
+      try:
+        pose = self.request_pose( pdb_name )
+      except FormatError:
+        raise ValueError( f"Pdb_name {pdb_name} not recognised by Rosetta server. Request pose list to see server identifiers for poses." )
+    else:
+      pdb_name = self.run_rosetta_command( ros_cmd="ros/send_pose", pose_name=pdb_name )
+      pdb_name = pdb_name["pose_name"]
+      pose = self.request_pose( pdb_name )
+
+    if not xml:
+      raise ValueError( "Cannot do anything without a valid RosettaScript" )
+    if not view_in_progress: # TODO implement a viewer that does not first rely on getting all the data first
+      frames = [""] * num_frames + 1
+      frames[1] = pose["pose_pdb"]
+      for ii in range( 1, num_frames ):
+        frame = self.request_pose( pdb_name )
+        frames[ii] = frame["pose_pdb"]
+        sleep( request_interval )
+
+      # Now to remove empty frames and convert the rest
+      frames = [ convert_pdb_string_to_framedata(frame) for frame in frames if frame != "" ]
+
+      self._trajectory.new_frames( frames )
+      self._trajectory.play()
+
 
 if __name__ == "__main__":
 
