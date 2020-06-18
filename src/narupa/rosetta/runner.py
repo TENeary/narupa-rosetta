@@ -176,15 +176,20 @@ class RosettaRunner:
       pdb_name = pdb_name["pose_name"]
       pose = self.request_pose( pdb_name )
 
+    # print(pdb_name)
+    # print( self.run_rosetta_command( ros_cmd="ros/request_pose_list" ) )
     if not xml:
       raise ValueError( "Cannot do anything without a valid RosettaScript" )
     if not view_in_progress: # TODO implement a viewer that does not first rely on getting all the data first
       frames = [""] * ( num_frames + 1 )
       frames[0] = pose["pose_pdb"]
       self.run_rosetta_command( "ros/send_and_parse_xml", pose_name=pdb_name, xml=xml )
-      for ii in range( 1, num_frames ):
-        frame = self.request_pose( pdb_name )
-        frames[ii] = frame["pose_pdb"]
+      for ii in range( 1, num_frames + 1 ):
+        try:
+          frame = self.request_pose( pdb_name )
+          frames[ii] = frame["pose_pdb"]
+        except FormatError:
+          pass
         sleep( request_interval )
 
       # Now to remove empty frames and convert the rest, then start the playback

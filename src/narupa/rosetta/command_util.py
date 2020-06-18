@@ -61,7 +61,7 @@ class RosettaCommand:
     :raises FormatError: If the response from the Rosetta server is an error message, but the key is correctly parsed.
     :return response: A list containing the response received from the server. The first entry will always be the return key.
     """
-    self._client.send_messages([self._msg_key] + msg_data)
+    self._client.send_messages( [self._msg_key] + msg_data )
     response = self._client.recv_messages()
     if not response:
       raise ResponseTimeoutError( "Rosetta Server did not respond to message request in time." )
