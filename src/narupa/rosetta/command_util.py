@@ -127,9 +127,10 @@ class SendPose(RosettaCommand):
     super().__init__( client=client, key="STORE_POSE" )
 
   def _execute(self,
+               pose_name : str,
                pose_to_store : str) -> Dict[str, str]:
     self._var_not_none( pose_to_store )
-    response = self._send_recv_request( [pose_to_store] )
+    response = self._send_recv_request( [pose_name, pose_to_store] )
     return { "pose_name" : response[1] }
 
   ################################################################
@@ -178,8 +179,10 @@ class SendAndParseXml(RosettaCommand):
     super().__init__( client=client, key="PARSE_AND_RUN_XML" )
 
   def _execute(self,
+               pose_name : str,
                xml : str):
+    self._var_not_none( pose_name )
     self._var_not_none( xml )
-    self._send_recv_request( [xml] )
+    self._send_recv_request( [pose_name, xml] )
     return
 

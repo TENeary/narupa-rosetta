@@ -34,7 +34,7 @@ class RosettaRunner:
     self._server = self._app.server                     # For convenience
     self._rosetta = RosettaClient( rosetta_server_address=rosetta_server_address, rosetta_server_port=rosetta_server_port )
     self._rosetta.connect()
-    self._trajectory = TrajectoryManager()
+    self._trajectory = TrajectoryManager( frame_publisher=self._frame_publisher )
     # self._pdb_converter = TODO pdb->framedata converter manager needs to keep track of proteins to see what needs to be rebuilt each frame
 
     self._ros_cmds = {}
@@ -63,27 +63,26 @@ class RosettaRunner:
     self._server.register_command( "ros/close_server", self.run_rosetta_command,
                                        { "ros_cmd": "ros/close_server" } )
     self._server.register_command( "ros/send_pose", self.run_rosetta_command,
-                                       { "ros_cmd" : "ros/send_pose", "pose_to_store" : None } )
+                                       { "ros_cmd" : "ros/send_pose", "pose_name" : None, "pose_to_store" : None } )
     self._server.register_command( "ros/request_pose", self.request_pose, # For speed reasons getting a pdb will avoid dict look ups.
                                        { "pose_name" : None } )
     self._server.register_command( "ros/request_pose_list", self.run_rosetta_command,
                                        { "ros_cmd" : "ros/request_pose_list" } )
     self._server.register_command( "ros/send_and_parse_xml", self.run_rosetta_command,
-                                       { "ros_cmd" : "ros/send_and_parse_xml", "xml" : None } )
+                                       { "ros_cmd" : "ros/send_and_parse_xml", "pose_name" : None, "xml" : None } )
     self._server.register_command( "get_rosetta_args", self.get_rosetta_command_args,
                                        { "ros_cmd_name" : "ros/echo_message" } )
-
-    # Add commands for manipulating in progress viewing with iMD VR client.
-    # To do implement play back etc.
-    self._server.register_command( PLAY_COMMAND_KEY, self._trajectory.play() )
-    self._server.register_command( PAUSE_COMMAND_KEY, self._trajectory.pause() )
-    self._server.register_command( RESET_COMMAND_KEY, self._trajectory.reset() )
-    self._server.register_command( STEP_COMMAND_KEY, self._trajectory.step() )
-
     # Compound commands to run a set of different rosetta commands together
     self._server.register_command( "ros/run_rosetta_script", self.run_rosetta_script,
                                    { "pdb" : None, "pdb_name" : None, "xml" : None,
                                      "num_frames" : 10000, "request_interval" : 0.01, "view_in_progress" : False } )
+
+    # Add commands for manipulating in progress viewing with iMD VR client.
+    # To do implement play back etc.
+    self._server.register_command( PLAY_COMMAND_KEY, self._trajectory.play )
+    self._server.register_command( PAUSE_COMMAND_KEY, self._trajectory.pause )
+    self._server.register_command( RESET_COMMAND_KEY, self._trajectory.reset )
+    self._server.register_command( STEP_COMMAND_KEY, self._trajectory.step )
 
   def run_rosetta_command(self,
                           ros_cmd : str = "None",
@@ -173,23 +172,23 @@ class RosettaRunner:
       except FormatError:
         raise ValueError( f"Pdb_name {pdb_name} not recognised by Rosetta server. Request pose list to see server identifiers for poses." )
     else:
-      pdb_name = self.run_rosetta_command( ros_cmd="ros/send_pose", pose_name=pdb_name )
+      pdb_name = self.run_rosetta_command( ros_cmd="ros/send_pose", pose_name=pdb_name, pose_to_store=pdb )
       pdb_name = pdb_name["pose_name"]
       pose = self.request_pose( pdb_name )
 
     if not xml:
       raise ValueError( "Cannot do anything without a valid RosettaScript" )
     if not view_in_progress: # TODO implement a viewer that does not first rely on getting all the data first
-      frames = [""] * num_frames + 1
-      frames[1] = pose["pose_pdb"]
+      frames = [""] * ( num_frames + 1 )
+      frames[0] = pose["pose_pdb"]
+      self.run_rosetta_command( "ros/send_and_parse_xml", pose_name=pdb_name, xml=xml )
       for ii in range( 1, num_frames ):
         frame = self.request_pose( pdb_name )
         frames[ii] = frame["pose_pdb"]
         sleep( request_interval )
 
-      # Now to remove empty frames and convert the rest
+      # Now to remove empty frames and convert the rest, then start the playback
       frames = [ convert_pdb_string_to_framedata(frame) for frame in frames if frame != "" ]
-
       self._trajectory.new_frames( frames )
       self._trajectory.play()
 
