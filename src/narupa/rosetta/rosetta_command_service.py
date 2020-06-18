@@ -36,17 +36,17 @@ class RosettaCommandService(CommandService):
 
   def _register_simple_rosetta_commands(self):
     #todo help text
-    self.register_rosetta_command( "ROS_echo_message", EchoMessage,
+    self.register_rosetta_command( "ROS/echo_message", EchoMessage,
                                    { "msg" : "TEST "} )
-    self.register_rosetta_command( "ROS_close_server", CloseServer,
+    self.register_rosetta_command( "ROS/close_server", CloseServer,
                                    {} )
-    self.register_rosetta_command( "ROS_send_pose", SendPose,
+    self.register_rosetta_command( "ROS/send_pose", SendPose,
                                    { "pose_to_store" : None })
-    self.register_rosetta_command( "ROS_request_pose", RequestPose,
+    self.register_rosetta_command( "ROS/request_pose", RequestPose,
                                    { "pose_name" : None })
-    self.register_rosetta_command( "ROS_request_pose_list", RequestPoseList,
+    self.register_rosetta_command( "ROS/request_pose_list", RequestPoseList,
                                    {} )
-    self.register_rosetta_command( "ROS_send_and_parse_xml", SendAndParseXml,
+    self.register_rosetta_command( "ROS/send_and_parse_xml", SendAndParseXml,
                                    { "xml" : None })
 
   def register_rosetta_command(self,
@@ -57,7 +57,7 @@ class RosettaCommandService(CommandService):
     if "client" in execute_args.keys():
       raise KeyError( "\"client\" is a protected argument and therefore cannot be used." )
     # As it is a Rosetta command and we need access to the RosettaClient we will use a prefix to discriminate
-    if rosetta_command_name.split("_")[0] != "ROS":
+    if rosetta_command_name.split("/")[0] != "ROS":
       rosetta_command_name = "ROS/" + rosetta_command_name
     self.register_command( rosetta_command_name, rosetta_command_obj.execute, execute_args )
 
