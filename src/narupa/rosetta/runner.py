@@ -47,12 +47,12 @@ class RosettaRunner:
     return self._rosetta.test_connection()
 
   def _register_commands(self):
-    self._ros_cmds = { "ros/echo_message" : EchoMessage.execute,
-                       "ros/close_server" : CloseServer.execute,
-                       "ros/send_pose" : SendPose.execute,
-                       "ros/request_pose" : RequestPose.execute,
-                       "ros/request_pose_list" : RequestPoseList.execute,
-                       "ros/send_and_parse_xml" : SendAndParseXml.execute }
+    self._ros_cmds = { "ros/echo_message" : EchoMessage,
+                       "ros/close_server" : CloseServer,
+                       "ros/send_pose" : SendPose,
+                       "ros/request_pose" : RequestPose,
+                       "ros/request_pose_list" : RequestPoseList,
+                       "ros/send_and_parse_xml" : SendAndParseXml }
 
     # Add commands specific to communicating with Rosetta
     self._server.register_command( "ros/echo_message", self.run_rosetta_command,
@@ -89,7 +89,7 @@ class RosettaRunner:
     :return Dict: Returns dictionary result corresponding to the called RosettaCommand object. Call get_rosetta_command_args for more details.
     """
     if ros_cmd in self._ros_cmds.keys():
-      return self._ros_cmds[ros_cmd]( client=self._rosetta, **kwargs )
+      return self._ros_cmds[ros_cmd].execute( client=self._rosetta, **kwargs )
     else:
       raise KeyError( "Rosetta command name not recognised. Stored commands include:\n"
                       f"{self._ros_cmds}" )
@@ -123,7 +123,7 @@ class RosettaRunner:
     # Check Rosetta command hasn't already been registered
     if not ros_cmd_name or not ros_cmd:
       raise ValueError( "Rosetta Command name cannot be None." )
-    if ros_cmd_name is in self._ros_cmds:
+    if ros_cmd_name in self._ros_cmds.keys():
       raise ValueError( "Rosetta command name already exists." )
     if ros_cmd_name.split("/")[0] != "ROS":
       ros_cmd_name = "ROS/" + ros_cmd_name
@@ -133,7 +133,7 @@ class RosettaRunner:
       raise KeyError( "\"client\" and \"key\" are protected arguments. These cannot be used in user defined RosettaCommand." )
 
     self._ros_cmds[ros_cmd_name] = ros_cmd.execute
-    self._server.register_command( f"ROS/{ros_cmd_name}", self.run_rosetta_command, cmd_args )
+    self._server.register_command( f"{ros_cmd_name}", self.run_rosetta_command, cmd_args )
 
   def get_rosetta_command_args(self,
                                ros_cmd_name : str) -> Dict[str, object]:
