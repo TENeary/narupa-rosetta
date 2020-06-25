@@ -37,7 +37,9 @@ class TrajectoryManager:
     :param new_frames: List of frames to be used for the newest trajectory viewing
     """
     self.cancel_playback()
+    self.frame_index = 0
     self.frames = new_frames
+    self.run_playback()
 
   def play( self ):
     """
