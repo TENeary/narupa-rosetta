@@ -60,7 +60,7 @@ def convert_pdb_list_to_framedata(pdb : list) -> FrameData:
 
   atom_links = atom_links[:count]
   frame = FrameData()
-  frame.arrays["particle.positions"] = atom_coords.flatten()
+  frame.arrays["particle.positions"] = atom_coords.flatten() / 10 # As PDB is in Angstroms but Narupa uses nm
   frame.arrays["bond.pairs"] = atom_links.flatten()
   frame.arrays["particle.elements"] = atom_ids
   return frame
