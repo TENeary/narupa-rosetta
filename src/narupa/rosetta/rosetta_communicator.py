@@ -123,3 +123,7 @@ class RosettaClient:
     while self._socket.getsockopt( zmq.RCVMORE ):
       all_msgs.append( self._socket.recv().decode("utf-8") )
     return all_msgs
+
+  def close(self):
+    self._socket.close()
+    self._context.term()
