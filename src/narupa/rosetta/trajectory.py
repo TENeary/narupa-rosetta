@@ -105,12 +105,14 @@ class RosettaTrajectoryManager:
   def _play( self ):
     if self.stored_frames and not self._new_frames:
       while not self._stop:
-        self.step()
+        if not self._pause:
+          self.step()
         sleep( 1 / self.user_fps )
 
   def play_saved( self ):
     with self._lock:
       self._stop = False
+      self._pause = False
     if self._thread:
       if self._thread.done():
         self._thread = self._thread_pool.submit( self._play )
