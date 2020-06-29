@@ -18,6 +18,10 @@ from .pdb_util import convert_pdb_string_to_framedata
 from narupa.trajectory.frame_server import PLAY_COMMAND_KEY, RESET_COMMAND_KEY, STEP_COMMAND_KEY, PAUSE_COMMAND_KEY
 from typing import Dict
 
+# Other imports
+from concurrent.futures import ThreadPoolExecutor
+from threading import RLock
+
 class RosettaRunner:
   """
 
@@ -39,6 +43,11 @@ class RosettaRunner:
 
     self._ros_cmds = {}
     self._register_commands()
+
+    # For concurrent playback and control
+    self._lock = RLock()
+    self._threads = ThreadPoolExecutor( max_workers=1 )
+    self._script_in_progress = False
 
 
   def can_contact_rosetta(self) -> bool:
@@ -79,7 +88,7 @@ class RosettaRunner:
 
     # Add commands for manipulating in progress viewing with iMD VR client.
     # To do implement play back etc.
-    self._server.register_command( PLAY_COMMAND_KEY, self._trajectory.play )
+    self._server.register_command( PLAY_COMMAND_KEY, self._trajectory.play_saved )
     self._server.register_command( PAUSE_COMMAND_KEY, self._trajectory.pause )
     self._server.register_command( RESET_COMMAND_KEY, self._trajectory.reset )
     self._server.register_command( STEP_COMMAND_KEY, self._trajectory.step )
@@ -95,11 +104,12 @@ class RosettaRunner:
     :param kwargs: Set of key work arguements and values accepted by the RosettaCommand being called.
     :return Dict: Returns dictionary result corresponding to the called RosettaCommand object. Call get_rosetta_command_args for more details.
     """
-    if ros_cmd in self._ros_cmds.keys():
-      return self._ros_cmds[ros_cmd].execute( client=self._rosetta, **kwargs )
-    else:
-      raise KeyError( "Rosetta command name not recognised. Stored commands include:\n"
-                      f"{self._ros_cmds}" )
+    with self._lock:
+      if ros_cmd in self._ros_cmds.keys():
+        return self._ros_cmds[ros_cmd].execute( client=self._rosetta, **kwargs )
+      else:
+        raise KeyError( "Rosetta command name not recognised. Stored commands include:\n"
+                        f"{self._ros_cmds}" )
 
   def request_pose(self,
                    pose_name : str = "None") -> Dict[str, str]:
@@ -128,19 +138,20 @@ class RosettaRunner:
     :raises ValueError: If ros_cmd_name has already been registered
     """
     # Check Rosetta command hasn't already been registered
-    if not ros_cmd_name or not ros_cmd:
-      raise ValueError( "Rosetta Command name cannot be None." )
-    if ros_cmd_name in self._ros_cmds.keys():
-      raise ValueError( "Rosetta command name already exists." )
-    if ros_cmd_name.split("/")[0] != "ROS":
-      ros_cmd_name = "ROS/" + ros_cmd_name
+    with self._lock:
+      if not ros_cmd_name or not ros_cmd:
+        raise ValueError( "Rosetta Command name cannot be None." )
+      if ros_cmd_name in self._ros_cmds.keys():
+        raise ValueError( "Rosetta command name already exists." )
+      if ros_cmd_name.split("/")[0] != "ROS":
+        ros_cmd_name = "ROS/" + ros_cmd_name
 
-    # Check protected arguments (client and key) haven't been used
-    if "client" in cmd_args.keys() or "key" in cmd_args.keys():
-      raise KeyError( "\"client\" and \"key\" are protected arguments. These cannot be used in user defined RosettaCommand." )
+      # Check protected arguments (client and key) haven't been used
+      if "client" in cmd_args.keys() or "key" in cmd_args.keys():
+        raise KeyError( "\"client\" and \"key\" are protected arguments. These cannot be used in user defined RosettaCommand." )
 
-    self._ros_cmds[ros_cmd_name] = ros_cmd.execute
-    self._server.register_command( f"{ros_cmd_name}", self.run_rosetta_command, cmd_args )
+      self._ros_cmds[ros_cmd_name] = ros_cmd.execute
+      self._server.register_command( f"{ros_cmd_name}", self.run_rosetta_command, cmd_args )
 
   def get_rosetta_command_args(self,
                                ros_cmd_name : str) -> Dict[str, object]:
@@ -150,10 +161,11 @@ class RosettaRunner:
     :param ros_cmd_name: Name of the RosettaCommand as stored when the command was registered.
     :return Dict { kw_arg : arg_type, ..., return : return_type } : Dictionary of keyword arguments and return names and types.
     """
-    if ros_cmd_name in self._ros_cmds.keys():
-      return self._ros_cmds[ros_cmd_name]._execute.__annotations__
-    else:
-      raise KeyError( "Command not recognised" )
+    with self._lock:
+      if ros_cmd_name in self._ros_cmds.keys():
+        return self._ros_cmds[ros_cmd_name]._execute.__annotations__
+      else:
+        raise KeyError( "Command not recognised" )
 
   def run_rosetta_script( self,
                           pdb : str = None,
@@ -180,33 +192,37 @@ class RosettaRunner:
     # TODO look into why num_frames is converted to float
     num_frames = int(num_frames)
     num_retries = int(num_retries)
-    # print(pdb_name)
-    # print( self.run_rosetta_command( ros_cmd="ros/request_pose_list" ) )
+
     if not xml:
       raise ValueError( "Cannot do anything without a valid RosettaScript" )
-    if not view_in_progress: # TODO implement a viewer that does not first rely on getting all the data first
-      type(num_frames)
-      frames = [""] * ( num_frames + 1 )
-      frames[0] = pose["pose_pdb"]
-      self.run_rosetta_command( "ros/send_and_parse_xml", pose_name=pdb_name, xml=xml )
-      num_tries = 0
-      for ii in range( 1, num_frames + 1 ):
-        if ii % 10 == 0:
-          print( f"Getting frame: {ii}" )
-        if num_tries != num_retries:
-          try:
-           frame = self.request_pose( pdb_name )
-           frames[ii] = frame["pose_pdb"]
-           num_tries = 0
-          except FormatError:
-            num_tries += 1
-          sleep( request_interval )
-        else:
-          break
+    with self._lock:
+      if not self._script_in_progress:
+        self._script_in_progress = True
+        self._trajectory.clear_frames()
+        self._trajectory.stored_frames.append( pose["pose_pdb"] )
+      else:
+        return
 
-      # Now to remove empty frames and convert the rest, then start the playback
-      frames = [ convert_pdb_string_to_framedata(frame) for frame in frames if frame != "" ]
-      self._trajectory.new_frames( frames )
+    if view_in_progress:
+      self._threads.submit( self._run_rosetta_script_realtime, pdb_name, xml, request_interval, num_retries )
+
+  def _run_rosetta_script_realtime( self,
+                                    pdb_name : str,
+                                    xml: str,
+                                    request_interval : float,
+                                    num_retries : int ):
+    self._trajectory.realtime_playback()
+    self.run_rosetta_command( "ros/send_and_parse_xml", pose_name=pdb_name, xml=xml )
+    num_tries = 0
+    while num_tries <= num_retries:
+      try:
+        frame = self.request_pose(pdb_name)
+        self._trajectory.update_frames( frame["pose_pdb"] )
+        num_tries = 0
+      except FormatError:
+        num_tries += 1
+      sleep( request_interval )
+    self._script_in_progress = False
 
   def close( self ):
     self._server.close()
