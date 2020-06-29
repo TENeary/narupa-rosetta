@@ -10,7 +10,7 @@ from .rosetta_communicator import RosettaClient, DEFAULT_ROSETTA_ADDRESS, DEFAUL
 from .command_util import ( RosettaCommand, EchoMessage, CloseServer,
                             SendPose, RequestPose, RequestPoseList,
                             SendAndParseXml )
-from .trajectory import TrajectoryManager
+from .trajectory import RosettaTrajectoryManager
 from time import sleep
 from .pdb_util import convert_pdb_string_to_framedata
 
@@ -34,7 +34,7 @@ class RosettaRunner:
     self._server = self._app.server                     # For convenience
     self._rosetta = RosettaClient( rosetta_server_address=rosetta_server_address, rosetta_server_port=rosetta_server_port )
     self._rosetta.connect()
-    self._trajectory = TrajectoryManager( frame_publisher=self._frame_publisher )
+    self._trajectory = RosettaTrajectoryManager( frame_publisher=self._frame_publisher )
     # self._pdb_converter = TODO pdb->framedata converter manager needs to keep track of proteins to see what needs to be rebuilt each frame
 
     self._ros_cmds = {}
