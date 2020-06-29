@@ -66,12 +66,14 @@ class RosettaTrajectoryManager:
       self._reset_bools()
 
   def _send_last_frame( self ):
+    frame = None
     with self._lock:
       if self._new_frames and self._updated:
         frame = self.stored_frames[-1]
         self._updated = False
-    frame = convert_pdb_string_to_framedata( frame )
-    self._frame_publisher.send_frame( 0, frame )
+    if frame:
+      frame = convert_pdb_string_to_framedata( frame )
+      self._frame_publisher.send_frame( 0, frame )
 
   def _realtime_playback( self ):
     while self._new_frames:
