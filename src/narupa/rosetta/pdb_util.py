@@ -6,7 +6,27 @@ from os.path import isfile
 from narupa.trajectory import FrameData
 from .pdb_consts import ATOM_IDS, RES_LINKAGES, RES3_INFO
 
-def convert_pdb_list_to_framedata(pdb : list) -> FrameData:
+
+def get_residues_from_pdb_list( pdb : list ) -> np.array:
+  """"""
+  atom_res_index = np.empty( (len(pdb), 3), dtype=str ) # [ atom_id, res_id, res_name ]
+  count = 0
+
+  for line in pdb:
+    if line[0:6] == "ATOM  " or line[0:6] == "HETATM": # If atom entry:
+      atom_res_index[count] = np.asarray( [line[6:11], line[22:26], line[17:20]] )
+
+  atom_res_index = atom_res_index[:count]
+  return
+
+
+def get_residues_from_pdb_string( pdb : str,
+                              delimiter : str = "\n" ) -> np.array:
+  """"""
+  return get_residues_from_list( pdb.split(delimiter) )
+
+
+def convert_pdb_list_to_framedata( pdb : list ) -> FrameData:
   """
   Method to quickly build a FrameData object from a pdb list.
   Each entry in the list should correspond to a line in the pdb file.
@@ -20,24 +40,27 @@ def convert_pdb_list_to_framedata(pdb : list) -> FrameData:
   :return frame: FrameData object corresponding to the given PDB
   """
   num_lines = len(pdb)
-  atom_coords = np.zeros((num_lines, 3), dtype=float)
-  atom_links = np.zeros((num_lines ** 2, 2), dtype=int)
-  atom_ids = np.zeros((num_lines,), dtype=int)
-  res_list = [""] * num_lines
+  atom_coords = np.zeros( (num_lines, 3), dtype=float )
+  atom_links = np.zeros( (num_lines ** 2, 2), dtype=int )
+  atom_ids = np.zeros( (num_lines,), dtype=int )
+  res_list = np.empty( (num_lines,), dtype=str )
+  atom_res = np.zeros( (num_lines,), dtype=int )
   count = 0
   for ii, line in enumerate(pdb):
     if line[0:6] == "ATOM  " or line[0:6] == "HETATM":
       # Only care about atom coordinate entries
       atom_coords[count] = np.array([line[30:38], line[38:46], line[46:54]])
       atom_ids[count] = ATOM_IDS[line[76:78].strip()]
+      atom_res[count] = int(line[22:26])
 
-      if res_list[int(line[22:26]) - 1] == "": # TODO consider multichain proteins, as this current implementation doesnt work properly
+      if res_list[atom_res[count] - 1] == "": # TODO consider multichain proteins, as this current implementation doesnt work properly
         # If we haven't recorded the entry before then get the next res
         # Will eventually use these entries to build atom linkages.
-        res_list[int(line[22:26]) - 1] = line[17:20]
+        res_list[atom_res[count] - 1] = line[17:20]
       count += 1
   atom_coords = atom_coords[:count]
   atom_ids = atom_ids[:count]
+  atom_res = atom_res[:count]
 
   res_list = [ res for res in res_list if res != "" ]
   count, atom_count = 0, 0
@@ -63,6 +86,7 @@ def convert_pdb_list_to_framedata(pdb : list) -> FrameData:
   frame.arrays["particle.positions"] = atom_coords.flatten() / 10 # As PDB is in Angstroms but Narupa uses nm
   frame.arrays["bond.pairs"] = atom_links.flatten()
   frame.arrays["particle.elements"] = atom_ids
+  frame.arrays["particle.residues"] = atom_res
   return frame
 
 
