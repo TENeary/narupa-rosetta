@@ -9,7 +9,7 @@ setup(
     name="narupa-rosetta",
     version="0.0.0",
     description="Rosetta interface methods for Narupa",
-    author="Intangible Realities Lab",
+    author="Tim Neary",
     author_email="tn15550@bristol.ac.uk",
     url="https://gitlab.com/intangiblerealities/",
     packages=find_namespace_packages("src", include="narupa.*"),
