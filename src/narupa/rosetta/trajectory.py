@@ -20,17 +20,18 @@ class RosettaTrajectoryManager:
     self._frame_publisher = frame_publisher
     self._thread_pool = futures.ThreadPoolExector( max_workers=1 )
     self._thread = None
-      # Used for storing each new pose and sending new frames
     self._lock = RLock()
     self.stored_frames = deque( maxlen=stored_frames )
-
     self.user_fps = user_fps
+
+    # Bools for controlling the state of the TrajectoryManager
     self._new_frames = None
     self._updated = None
     self._stop = None
     self._pause = None
     self.frame_id = None
     self._reset_bools()
+
 
   def _reset_bools(self):
     with self._lock:
@@ -126,3 +127,15 @@ class RosettaTrajectoryManager:
   def pause( self ):
     with self._lock:
       self._pause = True
+
+  ################################################################
+  #####################  Utility functions   #####################
+  ################################################################
+
+  def get_current_frame(self) -> str:
+    """
+    Gets the pdb of the frame as indicated by the current frame_id.
+
+    :return pdb_string: String corresponding to the pdb of the current frame.
+    """
+    return self.stored_frames[self.frame_id]
