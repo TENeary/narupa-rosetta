@@ -3,6 +3,7 @@
 
 import xml.etree.ElementTree as xml
 import numpy as np
+from threading import RLock
 from narupa.state.state_dictionary import DictionaryChange
 from .pdb_util import get_residues_from_pdb_list
 from .residue_selector import ResidueSelector
@@ -35,6 +36,8 @@ class RosettaScriptsBuilder:
                 delimiter : str = None,
                 pdb_list : list = None ):
     """"""
+    self._selection_lock = RLock()
+
     self._pdb = None
     self.add_pdb( pdb, delimiter, pdb_list )
     self._pdb_info = get_residues_from_pdb_list( self._pdb ) # [ atom_id, res_id, res_name ]
@@ -163,23 +166,36 @@ class RosettaScriptsBuilder:
     self._xml.find(RESIDUE_SELECTORS).append( selector.to_xml() )
     return selector_name
 
-  def _add_new_res( self,
-                    res_list : list ):
+  def add_new_res( self,
+                  *interactions ):
     """"""
-    return
+    all_particles = []
+    for interaction in interactions:
+      all_particles.extend(interaction.particles)
+    with self._selection_lock:
+      for res_sele in self._active_residue_selectors:
+        res_sele.add_residues( self._pdb, all_particles )
 
-  def _rm_new_res( self,
-                   res_list : list ):
+
+  def rm_new_res( self,
+                  *interactions ):
     """"""
-    return
+    all_particles = []
+    for interaction in interactions:
+      all_particles.extend(interaction.particles)
+    with self._selection_lock:
+      for res_sele in self._active_residue_selectors:
+        res_sele.remove_residues(self._pdb, all_particles)
 
   def new_residues( self,
-                    res_list : list ):
+                    *interactions ):
     """"""
+    if not self._pdb:
+      return
     if self._add_res_to_sele:
-      self._add_new_res( res_list )
+      self.add_new_res( *interactions )
     else:
-      self._rm_new_res( res_list )
+      self.rm_new_res( *interactions )
 
   def set_add_new_res( self ):
     self._add_res_to_sele = True
