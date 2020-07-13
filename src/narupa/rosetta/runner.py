@@ -11,6 +11,7 @@ from .command_util import ( RosettaCommand, EchoMessage, CloseServer,
                             SendPose, RequestPose, RequestPoseList,
                             SendAndParseXml )
 from .trajectory import RosettaTrajectoryManager
+from .xml_builder import RosettaScriptsBuilder
 from time import sleep
 from .pdb_util import convert_pdb_string_to_framedata
 
@@ -39,6 +40,7 @@ class RosettaRunner:
     self._rosetta = RosettaClient( rosetta_server_address=rosetta_server_address, rosetta_server_port=rosetta_server_port )
     self._rosetta.connect()
     self._trajectory = RosettaTrajectoryManager( frame_publisher=self._frame_publisher )
+    self._xml_builder = RosettaScriptsBuilder()
     # self._pdb_converter = TODO pdb->framedata converter manager needs to keep track of proteins to see what needs to be rebuilt each frame
 
     self._ros_cmds = {}
@@ -93,6 +95,14 @@ class RosettaRunner:
     self._server.register_command( RESET_COMMAND_KEY, self._trajectory.reset )
     self._server.register_command( STEP_COMMAND_KEY, self._trajectory.step )
 
+    # Add commands for NarupaIMD VR client
+    self._server.register_command( "ros_build/new_selection", self._xml_builder.new_residue_selector, {} )
+    self._server.register_command( "ros_build/add_to_selection", self._xml_builder.set_add_new_res, {} )
+    self._server.register_command( "ros_build/rm_from_selection", self._xml_builder.set_rm_new_res, {} )
+    self._server.register_command( "ros_build/choose_selections", self._xml_builder.set_active_residue_selectors , { "active_selectors" : {} } )
+    self._server.register_command( "ros_build/add_movers", self.can_contact_rosetta, { "selected_movers" : {} } )
+    self._server.register_command( "ros_build/run_xml", self.can_contact_rosetta, {} )
+
   def run_rosetta_command(self,
                           ros_cmd : str = "None",
                           **kwargs ) -> Dict[str, str]:
@@ -143,8 +153,8 @@ class RosettaRunner:
         raise ValueError( "Rosetta Command name cannot be None." )
       if ros_cmd_name in self._ros_cmds.keys():
         raise ValueError( "Rosetta command name already exists." )
-      if ros_cmd_name.split("/")[0] != "ROS":
-        ros_cmd_name = "ROS/" + ros_cmd_name
+      if ros_cmd_name.split("/")[0] != "ros":
+        ros_cmd_name = "ros/" + ros_cmd_name
 
       # Check protected arguments (client and key) haven't been used
       if "client" in cmd_args.keys() or "key" in cmd_args.keys():
@@ -223,6 +233,14 @@ class RosettaRunner:
         num_tries += 1
       sleep( request_interval )
     self._script_in_progress = False
+
+  def stop_collecting_and_setup_for_xml( self ):
+    self._trajectory.cancel_realtime()
+    self._xml_builder.add_pdb( self._trajectory.get_current_frame() )
+
+  def get_xml_and_run( self ):
+    xml_str = self._xml_builder.export_xml()
+    self.run_rosetta_script( pdb=self._trajectory.get_current_frame(), xml=xml_str )
 
   def close( self ):
     self._server.close()
