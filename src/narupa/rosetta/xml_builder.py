@@ -10,6 +10,10 @@ from .residue_selector import ResidueSelector
 SHARED_DICT_KEY_RES_SELE = "ros/residue_selectors"
 SHARED_DICT_KEY_MOVER = "ros/movers"
 
+DEFAULT_TASK_OPERATION = "OperateOnResidueSubset"
+PREVENT_DESIGN = "RestrictToRepackingRLT"
+PREVENT_REPACK = "PreventRepackingRLT"
+
 # Consts to allow for quicker change if names or syntax change
 ROSETTASCRIPTS = "ROSETTASCRIPTS"
 SCOREFXNS = "SCOREFXNS"
@@ -149,7 +153,7 @@ class RosettaScriptsBuilder:
     sele_type = "Index"
     selector_name = self._get_unique_name(RESIDUE_SELECTORS, sele_type, selector_name)
     if residue_selector:
-      if residue_selector.type != "Index":
+      if residue_selector.type == "Index":
         residue_selector.name = selector_name
         selector = residue_selector.to_xml()
       else:
@@ -194,23 +198,46 @@ class RosettaScriptsBuilder:
         if active:
           active_selectors.append( selector )
 
+  def add_task_operation( self,
+                          residue_selectors : list,
+                          prevent_design : bool ) -> ( str, xml.Element ): # TODO implement a way to add multiple task_operations of different types.
+    res_sele_names = []
+    for res_sele in residue_selectors:
+      res_sele_names.append( self.add_index_residue_selector( residue_selector=res_sele ) )
+
+    task_operation_name = self._get_unique_name(TASKOPERATIONS, DEFAULT_TASK_OPERATION)
+    task_operation = xml.Element( DEFAULT_TASK_OPERATION,
+                                  name=task_operation_name,
+                                  residue_selector=",".join( res_sele_names ),
+                                  selector_logic="!" )
+    if prevent_design:
+      task_operation.append( xml.Element(PREVENT_DESIGN) )
+    else:
+      task_operation.append( xml.Element(PREVENT_REPACK) )
+    self._xml.find( TASKOPERATIONS ).append( task_operation )
+    return task_operation_name
+
   def add_pack_mover( self, # TODO implement way to add all available args to RosettaScripts
                       mover_name : str = None,
                       residue_selectors: list = None,
                       task_operations : str = None ):
     """"""
-    mover_type  = "PackRotamersMover" # TODO add task operations
+    mover_type  = "PackRotamersMover"
     mover_name = self._get_unique_name( MOVERS, mover_type, mover_name )
+    if not residue_selectors:
+      residue_selectors = self._active_residue_selectors
+    comb_res_sele = self._create_combined_residue_selector( residue_selectors )
+    task_operation_name = self.add_task_operation( comb_res_sele, prevent_design=True )
     mover = xml.Element( mover_type,
                          name=mover_name,
-                         # task_operations="",
+                         task_operations=task_operation_name,
                          )
     self._xml.find(MOVERS).append( mover )
     return mover_name
 
   def add_minimise_mover( self,
                           residue_selectors: list = None,
-                          mover_name : str = None ):
+                          mover_name : str = None ): # TODO currently cannot be controlled with selections implement movemap factory builder
     """"""
     mover_type = "MinMover"
     mover_name = self._get_unique_name(MOVERS, mover_type, mover_name)
@@ -229,15 +256,19 @@ class RosettaScriptsBuilder:
                             residue_selectors : list = None,
                             task_operations : list = None ):
     """"""
-    mover_type = "FastDesign" # TODO add task operations
-    mover_name = self._get_unique_name(MOVERS, mover_type, mover_name)
+    mover_type = "FastDesign"
+    mover_name = self._get_unique_name( MOVERS, mover_type, mover_name )
+    if not residue_selectors:
+      residue_selectors = self._active_residue_selectors
+    comb_res_sele = self._create_combined_residue_selector( residue_selectors )
+    task_operation_name = self.add_task_operation( comb_res_sele, prevent_design=True )
     mover = xml.Element(mover_type,
                         name=mover_name,
                         # scorefxn="",
-                        # task_operations="",
+                        task_operations=task_operation_name,
                         # cst_file=""
                         )
-    self._xml.find(RESIDUE_SELECTORS).append( mover )
+    self._xml.find( RESIDUE_SELECTORS ).append( mover )
     return mover
 
   def add_fastrelax_mover( self,
@@ -245,7 +276,20 @@ class RosettaScriptsBuilder:
                            residue_selectors : list = None,
                            task_operations : list = None ):
     """"""
-    return
+    mover_type = "FastDesign"
+    mover_name = self._get_unique_name( MOVERS, mover_type, mover_name )
+    if not residue_selectors:
+      residue_selectors = self._active_residue_selectors
+    comb_res_sele = self._create_combined_residue_selector( residue_selectors )
+    task_operation_name = self.add_task_operation( comb_res_sele, prevent_design=False )
+    mover = xml.Element(mover_type,
+                        name=mover_name,
+                        # scorefxn="",
+                        task_operations=task_operation_name,
+                        # cst_file=""
+                        )
+    self._xml.find( RESIDUE_SELECTORS ).append( mover )
+    return mover
 
   def _create_combined_residue_selector( self,
                                          residue_selectors : list,
@@ -259,14 +303,14 @@ class RosettaScriptsBuilder:
     return comb_selector
 
   def add_new_movers( self,
-                      selected_movers = {} ):
+                      selected_movers : dict = None ):
     """"""
-    # Currently all movers added will be auto generated and use the active residue selectors
-    if selected_movers == {}:
+    # Currently all movers' names will be auto generated and use the active residue selectors
+    if selected_movers is None or selected_movers == {}:
       return
     for mover, selected in selected_movers.values():
       if selected and mover in self._available_movers:
-        res_sele = self._create_combined_residue_selector( residue_selectors=selected_movers )
+        res_sele = self._create_combined_residue_selector( residue_selectors=self._active_residue_selectors )
         self._available_movers[mover]( residue_selectors=res_sele )
 
   def _finalise_xml( self ):
