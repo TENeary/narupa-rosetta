@@ -18,7 +18,7 @@ class RosettaTrajectoryManager:
                 stored_frames : int = 100,
                 user_fps = 15 ):
     self._frame_publisher = frame_publisher
-    self._thread_pool = futures.ThreadPoolExector( max_workers=1 )
+    self._thread_pool = futures.ThreadPoolExecutor( max_workers=1 )
     self._thread = None
     self._lock = RLock()
     self.stored_frames = deque( maxlen=stored_frames )
