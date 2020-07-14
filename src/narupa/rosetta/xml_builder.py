@@ -6,6 +6,7 @@ import numpy as np
 from threading import RLock
 
 from narupa.state.state_dictionary import DictionaryChange
+from narupa.app import NarupaImdClient
 
 from .pdb_util import get_residues_from_pdb_list
 from .residue_selector import ResidueSelector
@@ -36,13 +37,22 @@ class RosettaScriptsBuilder:
   def __init__( self,
                 pdb : str = None,
                 delimiter : str = None,
-                pdb_list : list = None ):
+                pdb_list : list = None,
+                renderer : NarupaImdClient = None ):
     """"""
+    # self.renderer =  #TODO make this a seperate object, for now it will just always change the colour of the selected res
     self._selection_lock = RLock()
 
+    if renderer:
+      self.renderer = renderer
+      self.active_selection = self.renderer.create_selection( name="active_particles" )
+    else:
+      raise ValueError( "renderer cannot be None" )
+
     self._pdb = None
+    self._pdb_info = None # [ atom_id, res_id, res_name ]
     self.add_pdb( pdb, delimiter, pdb_list )
-    self._pdb_info = get_residues_from_pdb_list( self._pdb ) # [ atom_id, res_id, res_name ]
+
 
     self.residue_selectors = []
     self._active_residue_selectors = []
@@ -171,6 +181,23 @@ class RosettaScriptsBuilder:
     self._xml.find(RESIDUE_SELECTORS).append( selector.to_xml() )
     return selector_name
 
+  def _get_all_active_particles( self ) -> np.array:
+    all_particles = np.array( [], dtype=int )
+    all_res = np.array( [], dtype=int )
+    for sele in self.residue_selectors:
+      if sele.name in self._active_residue_selectors:
+        all_res = np.concatenate( all_res, sele.residues )
+    all_particles = self._pdb_info[ np.isin(self._pdb_info[:, 1], all_res), 0 ].astype(int) - 1
+    return all_particles
+
+  def update_renderer( self ):
+    active_particles = self._get_all_active_particles()
+    with self.renderer.root_selection.modify() as root:
+      root.renderer = { "color" : "cpk" }
+    self.active_selection.set_particles( active_particles )
+    with self.active_selection.modify() as selection:
+      selection.renderer = { "color" : "Green" }
+
   def add_new_res( self,
                    particles ):
     """"""
@@ -197,6 +224,7 @@ class RosettaScriptsBuilder:
       self.add_new_res( all_particles )
     else:
       self.rm_new_res( all_particles )
+    self.update_renderer()
 
   def set_add_new_res( self ):
     self._add_res_to_sele = True
@@ -214,6 +242,7 @@ class RosettaScriptsBuilder:
       for selector, active in active_selectors.items():
         if active:
           active_selectors.append( selector )
+    self.update_renderer()
 
   def _create_combined_residue_selector( self,
                                          residue_selectors : list,

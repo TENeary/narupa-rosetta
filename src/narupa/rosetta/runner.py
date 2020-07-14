@@ -3,6 +3,7 @@
 
 # Narupa Server and CommandService imports
 from narupa.app import NarupaImdApplication
+from narupa.app import NarupaImdClient
 from narupa.command.command_service import CommandService
 
 # Rosetta required imports
@@ -35,12 +36,14 @@ class RosettaRunner:
                rosetta_server_port : int = DEFAULT_ROSETTA_PORT):
 
     self._app = NarupaImdApplication.basic_server( name=narupa_server_name, address=narupa_server_address, port=narupa_server_port )
+    self._renderer = NarupaImdClient.autoconnect()
+    self._renderer.subscribe_multiplayer()
     self._frame_publisher = self._app.frame_publisher   # For convenience
     self._server = self._app.server                     # For convenience
     self._rosetta = RosettaClient( rosetta_server_address=rosetta_server_address, rosetta_server_port=rosetta_server_port )
     self._rosetta.connect()
     self._trajectory = RosettaTrajectoryManager( frame_publisher=self._frame_publisher )
-    self._xml_builder = RosettaScriptsBuilder()
+    self._xml_builder = RosettaScriptsBuilder( renderer=self._renderer )
     self._app._interaction_updated_callback = self._xml_builder.new_residues
     # self._pdb_converter = TODO pdb->framedata converter manager needs to keep track of proteins to see what needs to be rebuilt each frame
 
