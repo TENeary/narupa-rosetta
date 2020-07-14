@@ -54,6 +54,7 @@ class RosettaTrajectoryManager:
     with self._lock:
       if new_frame and self._new_frames:
         self.stored_frames.append( new_frame )
+        self.frame_id += 1
         self._updated = True
 
   def clear_frames( self ):
@@ -90,6 +91,7 @@ class RosettaTrajectoryManager:
   def cancel_realtime( self ):
     with self._lock:
       self._new_frames = False
+      self._stop = True
 
   ################################################################
   ################### For playing saved frames ###################
