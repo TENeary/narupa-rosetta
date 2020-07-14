@@ -11,14 +11,15 @@ def get_residues_from_pdb_list( pdb : list ) -> np.array:
   """"""
   if not pdb:
     return None
-  atom_res_index = np.empty( (len(pdb), 3), dtype=str ) # [ atom_id, res_id, res_name ]
+  atom_res_index = np.empty( (len(pdb), 3), dtype=object ) # [ atom_id, res_id, res_name ]
   count = 0
 
   for line in pdb:
     if line[0:6] == "ATOM  " or line[0:6] == "HETATM": # If atom entry:
-      atom_res_index[count] = np.asarray( [line[6:11], line[22:26], line[17:20]] )
+      atom_res_index[count] = np.array( [line[6:11], line[22:26], line[17:20]], dtype=str )
+      count += 1
 
-  atom_res_index = atom_res_index[:count]
+  atom_res_index = atom_res_index[:count, :]
   return atom_res_index
 
 
