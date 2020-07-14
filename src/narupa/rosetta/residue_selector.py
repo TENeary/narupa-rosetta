@@ -27,7 +27,7 @@ class ResidueSelector:
     else:
       raise ValueError( f"Residue selector type of {sele_type} is not accepted. See Rosetta documentation or ACCEPTED_RES_SELECTORS for the list of accepted types.")
 
-    if res_list:
+    if res_list is not None:
       self.residues = np.unique( res_list )
     else:
       self.residues = np.array( [], dtype=int )
@@ -68,8 +68,8 @@ class ResidueSelector:
     :param pdb_info: Numpy array of shape (N, 3) in the form [ atom_id, res_id, res_name ]
     :param atom_selections: list of atom ids for the selection.
     """
-    idx, = np.where( np.isin( pdb_info[:, 0] == atom_selections ) )
-    self.residues = np.unique( np.concatenate( self.residues, pdb_info[idx, 1] ) )
+    idx = np.isin( pdb_info[:, 0].astype(int), atom_selections.astype(int) )
+    self.residues = np.unique( np.concatenate( (self.residues, pdb_info[idx, 1].astype(int) )) )
 
   def remove_residues( self,
                        pdb_info : np.ndarray,
@@ -80,5 +80,5 @@ class ResidueSelector:
     :param pdb_info:
     :param atom_selections:
     """
-    idx, = np.where( np.isin( pdb_info[:, 0] == atom_selections ) )
-    self.residues = np.delete( self.residues, pdb_info[idx, 1] - 1 )
+    idx = np.isin( pdb_info[:, 0].astype(int), atom_selections.astype(int) )
+    self.residues = self.residues[np.isin( self.residues, pdb_info[idx, 1].astype(int), invert=True )]
