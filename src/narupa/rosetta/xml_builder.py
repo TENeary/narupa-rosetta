@@ -4,7 +4,9 @@
 import xml.etree.ElementTree as xml
 import numpy as np
 from threading import RLock
+
 from narupa.state.state_dictionary import DictionaryChange
+
 from .pdb_util import get_residues_from_pdb_list
 from .residue_selector import ResidueSelector
 
@@ -42,7 +44,7 @@ class RosettaScriptsBuilder:
     self.add_pdb( pdb, delimiter, pdb_list )
     self._pdb_info = get_residues_from_pdb_list( self._pdb ) # [ atom_id, res_id, res_name ]
 
-    self.residue_selectors = [ ResidueSelector( name="Total Protein", sele_type="Index", res_list=self._pdb_info[:, 1] ) ]
+    self.residue_selectors = []
     self._active_residue_selectors = []
     self._add_res_to_sele = True
 
@@ -57,7 +59,7 @@ class RosettaScriptsBuilder:
 
   def add_pdb( self,
                pdb : str = None,
-               delimiter : str = None,
+               delimiter : str = "\n",
                pdb_list : list = None ):
     if pdb:
       self._pdb = pdb.split(delimiter)
@@ -65,7 +67,10 @@ class RosettaScriptsBuilder:
       self._pdb = pdb_list
     else:
       self._pdb = None
-    self._pdb_info = get_residues_from_pdb_list( self._pdb )
+    if self._pdb is not None:
+      self._pdb_info = get_residues_from_pdb_list( self._pdb )
+      self.residue_selectors = [ ResidueSelector(name="Total Protein", sele_type="Index", res_list=self._pdb_info[:, 1].astype(int)) ]
+
 
   def _build_default_rosetta_script( self ):
     """
@@ -90,7 +95,7 @@ class RosettaScriptsBuilder:
 
   def clear( self ):
     """
-    Clears all stored information, including pdb, xml and atom and residue information.
+    Clears all stored information, including pdb, xml, atom and residue information.
     """
     self._pdb = None
     self._pdb_info = None
@@ -167,35 +172,31 @@ class RosettaScriptsBuilder:
     return selector_name
 
   def add_new_res( self,
-                  *interactions ):
+                   particles ):
     """"""
-    all_particles = []
-    for interaction in interactions:
-      all_particles.extend(interaction.particles)
     with self._selection_lock:
       for res_sele in self._active_residue_selectors:
-        res_sele.add_residues( self._pdb, all_particles )
-
+        res_sele.add_residues( self._pdb, particles )
 
   def rm_new_res( self,
-                  *interactions ):
+                  particles ):
     """"""
-    all_particles = []
-    for interaction in interactions:
-      all_particles.extend(interaction.particles)
     with self._selection_lock:
       for res_sele in self._active_residue_selectors:
-        res_sele.remove_residues(self._pdb, all_particles)
+        res_sele.remove_residues(self._pdb, particles)
 
   def new_residues( self,
                     *interactions ):
     """"""
     if not self._pdb:
       return
+    all_particles = []
+    for interaction in interactions:
+      all_particles.extend(interaction.particles)
     if self._add_res_to_sele:
-      self.add_new_res( *interactions )
+      self.add_new_res( all_particles )
     else:
-      self.rm_new_res( *interactions )
+      self.rm_new_res( all_particles )
 
   def set_add_new_res( self ):
     self._add_res_to_sele = True
@@ -210,9 +211,20 @@ class RosettaScriptsBuilder:
       self._active_residue_selectors = []
     else:
       active_selectors = []
-      for selector, active in active_selectors.values():
+      for selector, active in active_selectors.items():
         if active:
           active_selectors.append( selector )
+
+  def _create_combined_residue_selector( self,
+                                         residue_selectors : list,
+                                         sele_type : str = "Index") -> ResidueSelector:
+    """"""
+    comb_sele_name = self._get_unique_name( RESIDUE_SELECTORS, sele_type, prefix="comb_" )
+    all_res = np.array( [], dtype=int )
+    for sele in residue_selectors:
+      all_res = np.concatenate( all_res, sele.residues )
+    comb_selector = ResidueSelector( comb_sele_name, sele_type, res_list=all_res )
+    return comb_selector
 
   def add_task_operation( self,
                           residue_selectors : list,
@@ -243,7 +255,7 @@ class RosettaScriptsBuilder:
     if not residue_selectors:
       residue_selectors = self._active_residue_selectors
     comb_res_sele = self._create_combined_residue_selector( residue_selectors )
-    task_operation_name = self.add_task_operation( comb_res_sele, prevent_design=True )
+    task_operation_name = self.add_task_operation( [comb_res_sele], prevent_design=True )
     mover = xml.Element( mover_type,
                          name=mover_name,
                          task_operations=task_operation_name,
@@ -277,7 +289,7 @@ class RosettaScriptsBuilder:
     if not residue_selectors:
       residue_selectors = self._active_residue_selectors
     comb_res_sele = self._create_combined_residue_selector( residue_selectors )
-    task_operation_name = self.add_task_operation( comb_res_sele, prevent_design=True )
+    task_operation_name = self.add_task_operation( [comb_res_sele], prevent_design=True )
     mover = xml.Element(mover_type,
                         name=mover_name,
                         # scorefxn="",
@@ -297,7 +309,7 @@ class RosettaScriptsBuilder:
     if not residue_selectors:
       residue_selectors = self._active_residue_selectors
     comb_res_sele = self._create_combined_residue_selector( residue_selectors )
-    task_operation_name = self.add_task_operation( comb_res_sele, prevent_design=False )
+    task_operation_name = self.add_task_operation( [comb_res_sele], prevent_design=False )
     mover = xml.Element(mover_type,
                         name=mover_name,
                         # scorefxn="",
@@ -307,24 +319,13 @@ class RosettaScriptsBuilder:
     self._xml.find( RESIDUE_SELECTORS ).append( mover )
     return mover
 
-  def _create_combined_residue_selector( self,
-                                         residue_selectors : list,
-                                         sele_type : str = "Index") -> ResidueSelector:
-    """"""
-    comb_sele_name = self._get_unique_name( RESIDUE_SELECTORS, sele_type, prefix="comb_" )
-    all_res = np.array( [], dtype=int )
-    for sele in residue_selectors:
-      all_res = np.concatenate( all_res, sele.residues )
-    comb_selector = ResidueSelector( comb_sele_name, sele_type, res_list=all_res )
-    return comb_selector
-
   def add_new_movers( self,
                       selected_movers : dict = None ):
     """"""
     # Currently all movers' names will be auto generated and use the active residue selectors
     if selected_movers is None or selected_movers == {}:
       return
-    for mover, selected in selected_movers.values():
+    for mover, selected in selected_movers.items():
       if selected and mover in self._available_movers:
         res_sele = self._create_combined_residue_selector( residue_selectors=self._active_residue_selectors )
         self._available_movers[mover]( residue_selectors=res_sele )
