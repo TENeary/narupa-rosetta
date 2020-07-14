@@ -2,7 +2,7 @@
 # Licensed under the GPL. See License.txt in the project root for license information.
 
 # Narupa Server and CommandService imports
-from narupa.app import NarupaFrameApplication
+from narupa.app import NarupaImdApplication
 from narupa.command.command_service import CommandService
 
 # Rosetta required imports
@@ -34,13 +34,14 @@ class RosettaRunner:
                rosetta_server_address : str = DEFAULT_ROSETTA_ADDRESS,
                rosetta_server_port : int = DEFAULT_ROSETTA_PORT):
 
-    self._app = NarupaFrameApplication.basic_server( name=narupa_server_name, address=narupa_server_address, port=narupa_server_port )
+    self._app = NarupaImdApplication.basic_server( name=narupa_server_name, address=narupa_server_address, port=narupa_server_port )
     self._frame_publisher = self._app.frame_publisher   # For convenience
     self._server = self._app.server                     # For convenience
     self._rosetta = RosettaClient( rosetta_server_address=rosetta_server_address, rosetta_server_port=rosetta_server_port )
     self._rosetta.connect()
     self._trajectory = RosettaTrajectoryManager( frame_publisher=self._frame_publisher )
     self._xml_builder = RosettaScriptsBuilder()
+    self._app._interaction_updated_callback = self._xml_builder.new_residues
     # self._pdb_converter = TODO pdb->framedata converter manager needs to keep track of proteins to see what needs to be rebuilt each frame
 
     self._ros_cmds = {}
@@ -86,7 +87,7 @@ class RosettaRunner:
     # Compound commands to run a set of different rosetta commands together
     self._server.register_command( "ros/run_rosetta_script", self.run_rosetta_script,
                                    { "pdb" : None, "pdb_name" : None, "xml" : None,
-                                     "num_frames" : 10000, "request_interval" : 0.01, "num_retries" : 150, "view_in_progress" : False } )
+                                     "num_frames" : 10000, "request_interval" : 0.01, "num_retries" : 150, "view_in_progress" : True } )
 
     # Add commands for manipulating in progress viewing with iMD VR client.
     # To do implement play back etc.
@@ -96,11 +97,12 @@ class RosettaRunner:
     self._server.register_command( STEP_COMMAND_KEY, self._trajectory.step )
 
     # Add commands for NarupaIMD VR client
+    self._server.register_command( "ros_build/setup_for_xml_builder", self.stop_collecting_and_setup_for_xml, {} )
     self._server.register_command( "ros_build/new_selection", self._xml_builder.new_residue_selector, {} )
     self._server.register_command( "ros_build/add_to_selection", self._xml_builder.set_add_new_res, {} )
     self._server.register_command( "ros_build/rm_from_selection", self._xml_builder.set_rm_new_res, {} )
     self._server.register_command( "ros_build/choose_selections", self._xml_builder.set_active_residue_selectors , { "active_selectors" : {} } )
-    self._server.register_command( "ros_build/add_movers", self.can_contact_rosetta, { "selected_movers" : {} } )
+    self._server.register_command( "ros_build/add_movers", self._xml_builder.add_new_movers, { "selected_movers" : {} } )
     self._server.register_command( "ros_build/run_xml", self.can_contact_rosetta, {} )
 
   def run_rosetta_command(self,
@@ -164,7 +166,7 @@ class RosettaRunner:
       self._server.register_command( f"{ros_cmd_name}", self.run_rosetta_command, cmd_args )
 
   def get_rosetta_command_args(self,
-                               ros_cmd_name : str) -> Dict[str, object]:
+                               ros_cmd_name : str) -> Dict[str, str]:
     """
     Gets the keyword arguments and default value parameters used for calling the specified RosettaCommand
 
@@ -173,7 +175,10 @@ class RosettaRunner:
     """
     with self._lock:
       if ros_cmd_name in self._ros_cmds.keys():
-        return self._ros_cmds[ros_cmd_name]._execute.__annotations__
+        return_val = self._ros_cmds[ros_cmd_name]._execute.__annotations__
+        for key in return_val.keys():
+          return_val[key] = str(return_val[key])
+        return return_val
       else:
         raise KeyError( "Command not recognised" )
 
@@ -184,7 +189,7 @@ class RosettaRunner:
                           num_frames : int = 10000, # TODO implement a way to continue past this threshold if desired
                           request_interval : float = 0.01,
                           num_retries : int = 150,
-                          view_in_progress : bool = False ): # TODO implement proper inprogress viewing
+                          view_in_progress : bool = True ): # TODO implement proper saved viewing
 
     # In all cases want to always use Rosetta pdbs where possible. This also doubles as a check to see whether the pose actually exists
     if not pdb and not pdb_name:
@@ -221,10 +226,14 @@ class RosettaRunner:
                                     xml: str,
                                     request_interval : float,
                                     num_retries : int ):
+    """"""
     self._trajectory.realtime_playback()
     self.run_rosetta_command( "ros/send_and_parse_xml", pose_name=pdb_name, xml=xml )
     num_tries = 0
     while num_tries <= num_retries:
+      with self._lock:
+        if not self._script_in_progress:
+          return
       try:
         frame = self.request_pose(pdb_name)
         self._trajectory.update_frames( frame["pose_pdb"] )
@@ -232,10 +241,14 @@ class RosettaRunner:
       except FormatError:
         num_tries += 1
       sleep( request_interval )
-    self._script_in_progress = False
+    with self._lock:
+      self._script_in_progress = False
 
   def stop_collecting_and_setup_for_xml( self ):
-    self._trajectory.cancel_realtime()
+    """"""
+    with self._lock:
+      self._script_in_progress = False
+      self._trajectory.cancel_realtime()
     self._xml_builder.add_pdb( self._trajectory.get_current_frame() )
 
   def get_xml_and_run( self ):
