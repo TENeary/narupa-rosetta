@@ -141,3 +141,9 @@ class RosettaTrajectoryManager:
     :return pdb_string: String corresponding to the pdb of the current frame.
     """
     return self.stored_frames[self.frame_id]
+
+  def send_current_frame( self ):
+    if self.stored_frames:
+      frame = self.stored_frames[self.frame_id]
+    frame = convert_pdb_string_to_framedata(frame)
+    self._frame_publisher.send_frame(0, frame)
