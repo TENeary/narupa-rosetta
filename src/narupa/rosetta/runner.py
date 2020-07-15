@@ -5,6 +5,7 @@
 from narupa.app import NarupaImdApplication
 from narupa.app import NarupaImdClient
 from narupa.command.command_service import CommandService
+from narupa.state.state_dictionary import DictionaryChange
 
 # Rosetta required imports
 from .rosetta_communicator import RosettaClient, DEFAULT_ROSETTA_ADDRESS, DEFAULT_ROSETTA_PORT, FormatError
@@ -101,10 +102,10 @@ class RosettaRunner:
 
     # Add commands for NarupaIMD VR client
     self._server.register_command( "ros_build/setup_for_xml_builder", self.stop_collecting_and_setup_for_xml, {} )
-    self._server.register_command( "ros_build/new_selection", self._xml_builder.new_residue_selector, {} )
+    self._server.register_command( "ros_build/new_selection", self.new_residue_selector, {} )
     self._server.register_command( "ros_build/add_to_selection", self._xml_builder.set_add_new_res, {} )
     self._server.register_command( "ros_build/rm_from_selection", self._xml_builder.set_rm_new_res, {} )
-    self._server.register_command( "ros_build/choose_selections", self._xml_builder.set_active_residue_selectors , { "active_selectors" : {} } )
+    self._server.register_command( "ros_build/choose_selections", self.set_active_selectors , { "active_selectors" : {} } )
     self._server.register_command( "ros_build/add_movers", self._xml_builder.add_new_movers, { "selected_movers" : {} } )
     self._server.register_command( "ros_build/run_xml", self.can_contact_rosetta, {} )
 
@@ -207,6 +208,7 @@ class RosettaRunner:
       pdb_name = pdb_name["pose_name"]
       pose = self.request_pose( pdb_name )
 
+    # self._xml_builder.update_renderer()
     # TODO look into why num_frames is converted to float
     num_frames = int(num_frames)
     num_retries = int(num_retries)
@@ -236,7 +238,7 @@ class RosettaRunner:
     while num_tries <= num_retries:
       with self._lock:
         if not self._script_in_progress:
-          return
+          break
       try:
         frame = self.request_pose(pdb_name)
         self._trajectory.update_frames( frame["pose_pdb"] )
@@ -253,12 +255,31 @@ class RosettaRunner:
       self._script_in_progress = False
       self._trajectory.cancel_realtime()
     self._xml_builder.add_pdb( self._trajectory.get_current_frame() )
+    change = DictionaryChange( { **self._xml_builder.get_residue_selector_dict(),
+                                 **self._xml_builder.get_movers_dict() }, [] )
+    self._server.update_state( self._server, change )
 
   def get_xml_and_run( self ):
     xml_str = self._xml_builder.export_xml()
     self.run_rosetta_script( pdb=self._trajectory.get_current_frame(), xml=xml_str )
 
+  def new_residue_selector( self ):
+    self._xml_builder.new_residue_selector()
+    selectors = self._xml_builder.get_residue_selector_dict()
+    change = DictionaryChange(selectors, [])
+    self._server.update_state(self._server, change)
+
+  def set_active_selectors( self,
+                            active_selectors : dict = None,
+                            **kwargs):
+    print(f"active_selectors: {active_selectors}")
+    print(f"Other arguements: {kwargs}")
+    selectors = self._xml_builder.set_active_residue_selectors( active_selectors )
+    change = DictionaryChange( selectors, [] )
+    self._server.update_state( self._server, change )
+
   def close( self ):
+    self._renderer.close()
     self._server.close()
     self._rosetta.close()
 
