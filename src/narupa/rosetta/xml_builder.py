@@ -5,7 +5,6 @@ import xml.etree.ElementTree as xml
 import numpy as np
 from threading import RLock
 
-from narupa.state.state_dictionary import DictionaryChange
 from narupa.app import NarupaImdClient
 
 from .pdb_util import get_residues_from_pdb_list
@@ -44,8 +43,8 @@ class RosettaScriptsBuilder:
     self._selection_lock = RLock()
 
     if renderer:
-      self.renderer = renderer
-      self.active_selection = self.renderer.create_selection( name="active_particles" )
+      self._renderer = renderer
+      self.active_selection = self._renderer.create_selection(name="active_particles")
     else:
       raise ValueError( "renderer cannot be None" )
 
@@ -182,21 +181,24 @@ class RosettaScriptsBuilder:
     return selector_name
 
   def _get_all_active_particles( self ) -> np.array:
-    all_particles = np.array( [], dtype=int )
+    if self._pdb is None:
+      return np.array( [], dtype=int )
     all_res = np.array( [], dtype=int )
     for sele in self.residue_selectors:
       if sele.name in self._active_residue_selectors:
-        all_res = np.concatenate( all_res, sele.residues )
-    all_particles = self._pdb_info[ np.isin(self._pdb_info[:, 1], all_res), 0 ].astype(int) - 1
+        all_res = np.concatenate( (all_res, sele.residues) )
+    all_particles = self._pdb_info[ np.isin(self._pdb_info[:, 1].astype(int), all_res), 0 ].astype(int) - 1
     return all_particles
 
   def update_renderer( self ):
     active_particles = self._get_all_active_particles()
-    with self.renderer.root_selection.modify() as root:
-      root.renderer = { "color" : "cpk" }
-    self.active_selection.set_particles( active_particles )
+    with self._renderer.root_selection.modify() as root:
+      root.renderer = { "color" : "cpk",
+                        "render" : "ball and stick" }
     with self.active_selection.modify() as selection:
-      selection.renderer = { "color" : "Green" }
+      selection.set_particles( active_particles.tolist() )
+      selection.renderer = { "color" : "Green",
+                             "render" : "ball and stick" }
 
   def add_new_res( self,
                    particles ):
@@ -233,16 +235,17 @@ class RosettaScriptsBuilder:
     self._add_res_to_sele = False
 
   def set_active_residue_selectors( self,
-                                    active_selectors : dict = {} ):
+                                    active_selectors : dict = None ):
     """"""
-    if active_selectors == {}:
-      self._active_residue_selectors = []
+    self._active_residue_selectors = []
+    if active_selectors is None:
+      pass
     else:
-      active_selectors = []
       for selector, active in active_selectors.items():
         if active:
-          active_selectors.append( selector )
+          self._active_residue_selectors.append( selector )
     self.update_renderer()
+    return self.get_residue_selector_dict()
 
   def _create_combined_residue_selector( self,
                                          residue_selectors : list,
@@ -251,7 +254,7 @@ class RosettaScriptsBuilder:
     comb_sele_name = self._get_unique_name( RESIDUE_SELECTORS, sele_type, prefix="comb_" )
     all_res = np.array( [], dtype=int )
     for sele in residue_selectors:
-      all_res = np.concatenate( all_res, sele.residues )
+      all_res = np.concatenate( (all_res, sele.residues) )
     comb_selector = ResidueSelector( comb_sele_name, sele_type, res_list=all_res )
     return comb_selector
 
