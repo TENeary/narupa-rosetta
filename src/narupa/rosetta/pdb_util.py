@@ -46,7 +46,7 @@ def convert_pdb_list_to_framedata( pdb : list ) -> FrameData:
   atom_coords = np.zeros( (num_lines, 3), dtype=float )
   atom_links = np.zeros( (num_lines ** 2, 2), dtype=int )
   atom_ids = np.zeros( (num_lines,), dtype=int )
-  res_list = np.empty( (num_lines,), dtype=str )
+  res_list = [""] * num_lines
   atom_res = np.zeros( (num_lines,), dtype=int )
   count = 0
   for ii, line in enumerate(pdb):
