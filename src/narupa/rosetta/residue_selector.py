@@ -28,14 +28,14 @@ class ResidueSelector:
       raise ValueError( f"Residue selector type of {sele_type} is not accepted. See Rosetta documentation or ACCEPTED_RES_SELECTORS for the list of accepted types.")
 
     if res_list is not None:
-      self.residues = np.unique( res_list )
+      self.residues = np.unique( res_list ).astype(int)
     else:
       self.residues = np.array( [], dtype=int )
 
 
   @property
   def is_empty( self ) -> bool:
-    return len(self.residues) > 0
+    return not len(self.residues) > 0
 
   def _validate( self ) -> bool:
     if self.type in ACCEPTED_RES_SELECTORS:
@@ -82,3 +82,15 @@ class ResidueSelector:
     """
     idx = np.isin( pdb_info[:, 0].astype(int), atom_selections.astype(int) )
     self.residues = self.residues[np.isin( self.residues, pdb_info[idx, 1].astype(int), invert=True )]
+
+  def invert( self,
+              pdb_info : np.ndarray ):
+    """
+    Produces a copy of a given residue selector where the given residues are those in the given pdb_info
+    but not in the current ResidueSelector object
+
+    :param pdb_info: Numpy array of shape (N, 3) in the form [ atom_id, res_id, res_name ]
+    :return:
+    """
+    return ResidueSelector( name=self.name, sele_type=self.type,
+                            res_list=pdb_info[np.isin( pdb_info[:, 1].astype(int), self.residues, invert=True ), 1].astype(int) )
