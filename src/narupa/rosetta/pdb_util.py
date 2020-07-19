@@ -90,6 +90,9 @@ def convert_pdb_list_to_framedata( pdb : list ) -> FrameData:
   frame.arrays["bond.pairs"] = atom_links.flatten()
   frame.arrays["particle.elements"] = atom_ids
   frame.arrays["particle.residues"] = atom_res
+  frame.residue_count = len(res_list)
+  frame.particle_count = len(atom_ids)
+  frame.chain_count = 1 # TODO consider multiple chains
   return frame
 
 
