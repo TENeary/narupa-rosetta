@@ -4,8 +4,7 @@
 # Narupa Server and CommandService imports
 from narupa.app import NarupaImdApplication
 from narupa.app import NarupaImdClient
-from narupa.command.command_service import CommandService
-from narupa.state.state_dictionary import DictionaryChange
+from narupa.state.state_service import DictionaryChange
 
 # Rosetta required imports
 from .rosetta_communicator import RosettaClient, DEFAULT_ROSETTA_ADDRESS, DEFAULT_ROSETTA_PORT, FormatError
@@ -37,15 +36,16 @@ class RosettaRunner:
                rosetta_server_port : int = DEFAULT_ROSETTA_PORT):
 
     self._app = NarupaImdApplication.basic_server( name=narupa_server_name, address=narupa_server_address, port=narupa_server_port )
-    self._renderer = NarupaImdClient.autoconnect()
-    self._renderer.subscribe_multiplayer()
     self._frame_publisher = self._app.frame_publisher   # For convenience
     self._server = self._app.server                     # For convenience
+    # self._renderer = NarupaImdClient.connect_to_single_server( address=self._server.address, port=self._server.port )
+    self._renderer = NarupaImdClient.autoconnect()
     self._rosetta = RosettaClient( rosetta_server_address=rosetta_server_address, rosetta_server_port=rosetta_server_port )
     self._rosetta.connect()
     self._trajectory = RosettaTrajectoryManager( frame_publisher=self._frame_publisher )
     self._xml_builder = RosettaScriptsBuilder( renderer=self._renderer )
-    self._app._interaction_updated_callback = self._xml_builder.new_residues
+    self._server._state_service.state_dictionary.content_updated.add_callback( self._xml_builder.new_residues )
+    # self._app.imd._interaction_updated_callback = self._xml_builder.new_residues
     # self._pdb_converter = TODO pdb->framedata converter manager needs to keep track of proteins to see what needs to be rebuilt each frame
 
     self._ros_cmds = {}
@@ -107,7 +107,7 @@ class RosettaRunner:
     self._server.register_command( "ros_build/rm_from_selection", self._xml_builder.set_rm_new_res, {} )
     self._server.register_command( "ros_build/choose_selections", self.set_active_selectors , { "active_selectors" : {} } )
     self._server.register_command( "ros_build/add_movers", self._xml_builder.add_new_movers, { "selected_movers" : {} } )
-    self._server.register_command( "ros_build/run_xml", self.can_contact_rosetta, {} )
+    self._server.register_command( "ros_build/run_xml", self.get_xml_and_run, {} )
 
   def run_rosetta_command(self,
                           ros_cmd : str = "None",
@@ -248,6 +248,7 @@ class RosettaRunner:
       sleep( request_interval )
     with self._lock:
       self._script_in_progress = False
+      self._trajectory.cancel_realtime()
 
   def stop_collecting_and_setup_for_xml( self ):
     """"""
@@ -257,7 +258,7 @@ class RosettaRunner:
     self._xml_builder.add_pdb( self._trajectory.get_current_frame() )
     change = DictionaryChange( { **self._xml_builder.get_residue_selector_dict(),
                                  **self._xml_builder.get_movers_dict() }, [] )
-    self._server.update_state( self._server, change )
+    self._server.update_state( None, change )
 
   def get_xml_and_run( self ):
     xml_str = self._xml_builder.export_xml()
@@ -267,16 +268,13 @@ class RosettaRunner:
     self._xml_builder.new_residue_selector()
     selectors = self._xml_builder.get_residue_selector_dict()
     change = DictionaryChange(selectors, [])
-    self._server.update_state(self._server, change)
+    self._server.update_state( None, change )
 
   def set_active_selectors( self,
-                            active_selectors : dict = None,
-                            **kwargs):
-    print(f"active_selectors: {active_selectors}")
-    print(f"Other arguements: {kwargs}")
+                            active_selectors : dict = None ):
     selectors = self._xml_builder.set_active_residue_selectors( active_selectors )
     change = DictionaryChange( selectors, [] )
-    self._server.update_state( self._server, change )
+    self._server.update_state( None, change )
 
   def close( self ):
     self._renderer.close()
