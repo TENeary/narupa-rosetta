@@ -84,8 +84,10 @@ class RosettaTrajectoryManager:
   def realtime_playback( self ):
     if self._thread:
       if self._thread.done():
+        self._reset_bools()
         self._thread = self._thread_pool.submit( self._realtime_playback )
     else:
+      self._reset_bools()
       self._thread = self._thread_pool.submit( self._realtime_playback )
 
   def cancel_realtime( self ):
