@@ -205,11 +205,11 @@ class RosettaScriptsBuilder:
       with self.root_selection.modify() as root:
         root.renderer = { "color" : "cpk",
                           "render" : "ball and stick" }
-    if not np.isin( active_particles, self.active_selection.selected_particle_ids ).any():
-      with self.active_selection.modify() as selection:
-        selection.set_particles( active_particles )
-        selection.renderer = { "color" : "Green",
-                               "render" : "ball and stick" }
+    # if not np.isin( active_particles, self.active_selection.selected_particle_ids ).any():
+    with self.active_selection.modify() as selection:
+      selection.set_particles( active_particles )
+      selection.renderer = { "color" : "Green",
+                             "render" : "ball and stick" }
 
   def add_new_res( self,
                    particles : list ):
