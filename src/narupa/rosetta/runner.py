@@ -91,7 +91,7 @@ class RosettaRunner:
     # Compound commands to run a set of different rosetta commands together
     self._server.register_command( "ros/run_rosetta_script", self.run_rosetta_script,
                                    { "pdb" : None, "pdb_name" : None, "xml" : None,
-                                     "num_frames" : 10000, "request_interval" : 0.01, "num_retries" : 150, "view_in_progress" : True } )
+                                     "num_frames" : 10000, "request_interval" : 0.01, "num_retries" : -1, "view_in_progress" : True } )
 
     # Add commands for manipulating in progress viewing with iMD VR client.
     # To do implement play back etc.
@@ -192,7 +192,7 @@ class RosettaRunner:
                           xml : str = None,
                           num_frames : int = 10000, # TODO implement a way to continue past this threshold if desired
                           request_interval : float = 0.01,
-                          num_retries : int = 150,
+                          num_retries : int = -1, # -1 will set to run until stopped
                           view_in_progress : bool = True ): # TODO implement proper saved viewing
 
     # In all cases want to always use Rosetta pdbs where possible. This also doubles as a check to see whether the pose actually exists
@@ -208,7 +208,6 @@ class RosettaRunner:
       pdb_name = pdb_name["pose_name"]
       pose = self.request_pose( pdb_name )
 
-    # self._xml_builder.update_renderer()
     # TODO look into why num_frames is converted to float
     num_frames = int(num_frames)
     num_retries = int(num_retries)
@@ -235,7 +234,7 @@ class RosettaRunner:
     self._trajectory.realtime_playback()
     self.run_rosetta_command( "ros/send_and_parse_xml", pose_name=pdb_name, xml=xml )
     num_tries = 0
-    while num_tries <= num_retries:
+    while num_tries <= num_retries or num_retries == -1:
       with self._lock:
         if not self._script_in_progress:
           break
@@ -255,6 +254,7 @@ class RosettaRunner:
     with self._lock:
       self._script_in_progress = False
       self._trajectory.cancel_realtime()
+    self._trajectory.send_current_frame()
     self._xml_builder.add_pdb( self._trajectory.get_current_frame() )
     change = DictionaryChange( { **self._xml_builder.get_residue_selector_dict(),
                                  **self._xml_builder.get_movers_dict() }, [] )
@@ -262,12 +262,13 @@ class RosettaRunner:
 
   def get_xml_and_run( self ):
     xml_str = self._xml_builder.export_xml()
+    self.set_active_selectors( {} )
     self.run_rosetta_script( pdb=self._trajectory.get_current_frame(), xml=xml_str )
 
   def new_residue_selector( self ):
     self._xml_builder.new_residue_selector()
     selectors = self._xml_builder.get_residue_selector_dict()
-    change = DictionaryChange(selectors, [])
+    change = DictionaryChange( selectors, [] )
     self._server.update_state( None, change )
 
   def set_active_selectors( self,
