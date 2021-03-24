@@ -2,6 +2,7 @@
 # Licensed under the GPL. See License.txt in the project root for license information.
 
 from typing import Dict
+from json import loads as jloads
 
 from .rosetta_communicator import *
 
@@ -82,6 +83,14 @@ class RosettaCommand:
     if not var:
       raise ValueError( f"In {self.__class__.__name__}: {var} is None... Aborting command call." )
 
+  @classmethod
+  def func_signature(cls) -> str:
+    annot_str = f"Arguments:\n"
+    for ak, av in cls._execute.__annotations__.items():
+      annot_str += f"\t{ak} - {av}\n"
+    annot_str += f"Returns:\n\t{cls._execute.__annotations__['return']}"
+    return annot_str
+
 
   ################################################################
   ############  Common Derived Class implementations  ############
@@ -131,7 +140,7 @@ class SendPose(RosettaCommand):
                pose_to_store : str) -> Dict[str, str]:
     self._var_not_none( pose_to_store )
     response = self._send_recv_request( [pose_name, pose_to_store] )
-    return { "pose_name" : response[1] }
+    return {"pose_name" : response[1]}
 
   ################################################################
 
@@ -142,13 +151,35 @@ class RequestPose(RosettaCommand):
   """
   def __init__(self,
                client : RosettaClient):
-    super().__init__( client=client, key="SEND_POSE" )
+    super().__init__(client=client, key="SEND_POSE")
 
   def _execute(self,
                pose_name : str = "pose0") -> Dict[str, str]:
-    self._var_not_none( pose_name )
-    pose = self._send_recv_request( [pose_name] )
-    return { "pose_pdb" : pose[1] }
+    self._var_not_none(pose_name)
+    pose = self._send_recv_request([pose_name])
+    return {"pose_pdb" : pose[1]}
+
+  ################################################################
+
+class RequestPoseInfo(RosettaCommand):
+  """
+  Requests the full pose information from Rosetta, this includes:
+    atom_elements,
+    atom_coords,
+    atom_bonds
+  This will be returned as Dict using the above strings as keys
+  """
+  def __init__(self,
+               client : RosettaClient):
+    super().__init__(client=client, key="SEND_POSE_INFO")
+
+  def _execute(self,
+               pose_name : str = "pose0") -> Dict[str, str]:
+    self._var_not_none(pose_name)
+    pose_info = self._send_recv_request( [pose_name] )
+    # Recieves a serialised json containing the following fields:
+    #   atom_coords, atom_elements, atom_bonds
+    return jloads(pose_info[1])
 
   ################################################################
 
