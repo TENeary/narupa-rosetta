@@ -36,29 +36,31 @@ class RosettaCommandService(CommandService):
 
   def _register_simple_rosetta_commands(self):
     #todo help text
-    self.register_rosetta_command( "ROS/echo_message", EchoMessage,
-                                   { "msg" : "TEST "} )
-    self.register_rosetta_command( "ROS/close_server", CloseServer,
-                                   {} )
-    self.register_rosetta_command( "ROS/send_pose", SendPose,
-                                   { "pose_to_store" : None })
-    self.register_rosetta_command( "ROS/request_pose", RequestPose,
-                                   { "pose_name" : None })
-    self.register_rosetta_command( "ROS/request_pose_list", RequestPoseList,
-                                   {} )
-    self.register_rosetta_command( "ROS/send_and_parse_xml", SendAndParseXml,
-                                   { "xml" : None })
+    self.register_rosetta_command("ros/echo_message", EchoMessage,
+                                  { "msg" : "TEST " })
+    self.register_rosetta_command("ros/close_server", CloseServer,
+                                  {} )
+    self.register_rosetta_command("ros/send_pose", SendPose,
+                                  { "pose_to_store" : None })
+    self.register_rosetta_command("ros/request_pose", RequestPose,
+                                  { "pose_name" : None })
+    self.register_rosetta_command("ros/request_pose_info", RequestPoseInfo,
+                                  { "pose_name" : None })
+    self.register_rosetta_command("ros/request_pose_list", RequestPoseList,
+                                  {})
+    self.register_rosetta_command("ros/send_and_parse_xml", SendAndParseXml,
+                                  { "xml" : None })
 
   def register_rosetta_command(self,
                                rosetta_command_name : str,
                                rosetta_command_obj : RosettaCommand,
-                               execute_args : dict = None):
+                               execute_args : dict = None) -> None:
     #todo help text
     if "client" in execute_args.keys():
       raise KeyError( "\"client\" is a protected argument and therefore cannot be used." )
     # As it is a Rosetta command and we need access to the RosettaClient we will use a prefix to discriminate
-    if rosetta_command_name.split("/")[0] != "ROS":
-      rosetta_command_name = "ROS/" + rosetta_command_name
+    if rosetta_command_name.split("/")[0] != "ros":
+      rosetta_command_name = "ros/" + rosetta_command_name
     self.register_command( rosetta_command_name, rosetta_command_obj.execute, execute_args )
 
   def RunCommand(self, request, context) -> CommandReply:
