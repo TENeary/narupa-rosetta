@@ -13,15 +13,15 @@ class RosettaTrajectoryManager:
   """
   Used for managing incoming PDBs and in progress frame viewing.
   """
-  def __init__( self,
-                frame_publisher : FramePublisher,
-                stored_frames : int = 100,
-                user_fps = 15 ):
+  def __init__(self,
+               frame_publisher : FramePublisher,
+               stored_frames : int = 100,
+               user_fps : int = 15):
     self._frame_publisher = frame_publisher
-    self._thread_pool = futures.ThreadPoolExecutor( max_workers=1 )
+    self._thread_pool = futures.ThreadPoolExecutor(max_workers=1)
     self._thread = None
     self._lock = RLock()
-    self.stored_frames = deque( maxlen=stored_frames )
+    self.stored_frames = deque(maxlen=stored_frames)
     self.user_fps = user_fps
 
     # Bools for controlling the state of the TrajectoryManager
@@ -33,7 +33,7 @@ class RosettaTrajectoryManager:
     self._reset_bools()
 
 
-  def _reset_bools(self):
+  def _reset_bools(self) -> None:
     with self._lock:
       self._new_frames = True
       self._updated = False
@@ -42,55 +42,55 @@ class RosettaTrajectoryManager:
       self.frame_id = 0
 
   @property
-  def is_collecting( self ):
+  def is_collecting(self) -> bool:
     return self._new_frames
 
   @property
-  def is_playing( self ):
+  def is_playing(self) -> bool:
     return not self._stop or not self._pause
 
-  def update_frames( self,
-                     new_frame : str = None ):
+  def update_frames(self,
+                    new_frame : str = None) -> None:
     with self._lock:
       if new_frame and self._new_frames:
-        self.stored_frames.append( new_frame )
+        self.stored_frames.append(new_frame)
         self.frame_id += 1
         self._updated = True
 
-  def clear_frames( self ):
+  def clear_frames(self) -> None:
     with self._lock:
       self._new_frames = False
       self._stop = True
     while self._thread and not self._thread.done():
-      sleep( 0.1 )
+      sleep(0.1)
     with self._lock:
       self.stored_frames.clear()
       self._reset_bools()
 
-  def _send_last_frame( self ):
+  def _send_last_frame(self) -> None:
     frame = None
     with self._lock:
       if self._new_frames and self._updated:
         frame = self.stored_frames[-1]
         self._updated = False
     if frame:
-      frame = convert_pdb_string_to_framedata( frame )
-      self._frame_publisher.send_frame( 0, frame )
+      frame = convert_pdb_string_to_framedata(frame)
+      self._frame_publisher.send_frame(0, frame)
 
-  def _realtime_playback( self ):
+  def _realtime_playback(self) -> None:
     while self._new_frames:
       self._send_last_frame()
 
-  def realtime_playback( self ):
+  def realtime_playback(self) -> None:
     if self._thread:
       if self._thread.done():
         self._reset_bools()
-        self._thread = self._thread_pool.submit( self._realtime_playback )
+        self._thread = self._thread_pool.submit(self._realtime_playback)
     else:
       self._reset_bools()
-      self._thread = self._thread_pool.submit( self._realtime_playback )
+      self._thread = self._thread_pool.submit(self._realtime_playback)
 
-  def cancel_realtime( self ):
+  def cancel_realtime(self) -> None:
     with self._lock:
       self._new_frames = False
       self._stop = True
@@ -99,36 +99,36 @@ class RosettaTrajectoryManager:
   ################### For playing saved frames ###################
   ################################################################
 
-  def step( self ):
+  def step(self) -> None:
     self._frame_publisher.send_frame( self.frame_id, self.stored_frames[self.frame_id] )
     self.frame_id = ( self.frame_id + 1) % len(self.stored_frames)
 
-  def reset( self ):
+  def reset(self) -> None:
     with self._lock:
       self.frame_id = 0
 
-  def _play( self ):
+  def _play(self) -> None:
     if self.stored_frames and not self._new_frames:
       while not self._stop:
         if not self._pause:
           self.step()
-        sleep( 1 / self.user_fps )
+        sleep(1 / self.user_fps)
 
-  def play_saved( self ):
+  def play_saved(self) -> None:
     with self._lock:
       self._stop = False
       self._pause = False
     if self._thread:
       if self._thread.done():
-        self._thread = self._thread_pool.submit( self._play )
+        self._thread = self._thread_pool.submit(self._play)
     else:
-      self._thread = self._thread_pool.submit( self._play )
+      self._thread = self._thread_pool.submit(self._play)
 
-  def cancel( self ):
+  def cancel(self) -> None:
     with self._lock:
       self._stop = True
 
-  def pause( self ):
+  def pause(self) -> None:
     with self._lock:
       self._pause = True
 
@@ -144,7 +144,7 @@ class RosettaTrajectoryManager:
     """
     return self.stored_frames[self.frame_id]
 
-  def send_current_frame( self ):
+  def send_current_frame(self) -> None:
     if self.stored_frames:
       frame = self.stored_frames[self.frame_id]
     frame = convert_pdb_string_to_framedata(frame)
