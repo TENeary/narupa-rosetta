@@ -1,35 +1,38 @@
 # Copyright (c) Tim Neary, University of Bristol. Github username: TENeary, contact: tn15550@bristol.ac.uk
 # Licensed under the GPL. See License.txt in the project root for license information.
 
-import numpy as np
-from os.path import isfile
 from narupa.trajectory import FrameData
 from .pdb_consts import ATOM_IDS, RES_LINKAGES, RES3_INFO
 
+import numpy as np
+from os.path import isfile
 
-def get_residues_from_pdb_list( pdb : list ) -> np.array:
+from typing import List, Dict
+
+
+def get_residues_from_pdb_list(pdb : list) -> np.array:
   """"""
   if not pdb:
     return None
-  atom_res_index = np.empty( (len(pdb), 3), dtype=object ) # [ atom_id, res_id, res_name ]
+  atom_res_index = np.empty((len(pdb), 3), dtype=object) # [ atom_id, res_id, res_name ]
   count = 0
 
   for line in pdb:
     if line[0:6] == "ATOM  " or line[0:6] == "HETATM": # If atom entry:
-      atom_res_index[count] = np.array( [line[6:11], line[22:26], line[17:20]], dtype=str )
+      atom_res_index[count] = np.array([line[6:11], line[22:26], line[17:20]], dtype=str)
       count += 1
 
   atom_res_index = atom_res_index[:count, :]
   return atom_res_index
 
 
-def get_residues_from_pdb_string( pdb : str,
-                              delimiter : str = "\n" ) -> np.array:
+def get_residues_from_pdb_string(pdb : str,
+                                 delimiter : str = "\n") -> np.array:
   """"""
-  return get_residues_from_pdb_list( pdb.split(delimiter) )
+  return get_residues_from_pdb_list(pdb.split(delimiter))
 
 
-def convert_pdb_list_to_framedata( pdb : list ) -> FrameData:
+def convert_pdb_list_to_framedata(pdb : list) -> FrameData:
   """
   Method to quickly build a FrameData object from a pdb list.
   Each entry in the list should correspond to a line in the pdb file.
@@ -43,11 +46,11 @@ def convert_pdb_list_to_framedata( pdb : list ) -> FrameData:
   :return frame: FrameData object corresponding to the given PDB
   """
   num_lines = len(pdb)
-  atom_coords = np.zeros( (num_lines, 3), dtype=float )
-  atom_links = np.zeros( (num_lines ** 2, 2), dtype=int )
-  atom_ids = np.zeros( (num_lines,), dtype=int )
+  atom_coords = np.zeros((num_lines, 3), dtype=float)
+  atom_links = np.zeros((num_lines ** 2, 2), dtype=int)
+  atom_ids = np.zeros((num_lines,), dtype=int)
   res_list = [""] * num_lines
-  atom_res = np.zeros( (num_lines,), dtype=int )
+  atom_res = np.zeros((num_lines,), dtype=int)
   count = 0
   for ii, line in enumerate(pdb):
     if line[0:6] == "ATOM  " or line[0:6] == "HETATM":
@@ -96,7 +99,7 @@ def convert_pdb_list_to_framedata( pdb : list ) -> FrameData:
   return frame
 
 
-def convert_pdb_file_to_framedata( pdb_file : str ):
+def convert_pdb_file_to_framedata(pdb_file : str):
   """
   Converts a pdb file into a FrameData object.
   Parses the file and then passes the resulting list to the
@@ -107,14 +110,14 @@ def convert_pdb_file_to_framedata( pdb_file : str ):
   :return frame: Return value from convert_pdb_list_to_framedata method.
   """
   if isfile( pdb_file ):
-    with open( pdb_file, "r" ) as r:
+    with open(pdb_file, "r") as r:
       pdb_lines = r.readlines()
   else:
-    raise FileNotFoundError( f"The given file ({pdb_file}) was not found..")
-  return convert_pdb_list_to_framedata( pdb_lines )
+    raise FileNotFoundError(f"The given file ({pdb_file}) was not found..")
+  return convert_pdb_list_to_framedata(pdb_lines)
 
 
-def convert_pdb_string_to_framedata( pdb_string : str ):
+def convert_pdb_string_to_framedata(pdb_string : str):
   """
   Splits a pdb string using the given delimiter character.
   The delimiter should be used only at the end of each new line.
@@ -126,4 +129,30 @@ def convert_pdb_string_to_framedata( pdb_string : str ):
   :return frame: FrameData object returned by the convert_pdb_list_to_framedata method.
   """
   pdb_list = pdb_string.split("\n")
-  return convert_pdb_list_to_framedata( pdb_list )
+  return convert_pdb_list_to_framedata(pdb_list)
+
+
+def _get_bond_pairs_from_pose_info(bond_pairs : List[List]) -> np.array:
+  """
+  Returns an array of bond pairs in the shape (N, 2) correpsonding to atom links
+  in the format expected by Narupa.
+  Atom bond pairs from Rosetta PoseInfo are formatted in an ordered list where the index
+  corresponds to the atom number and the following
+  The PoseInfo is 1-indexed as standard for Rosetta numbering.
+  """
+  pass
+
+
+def convert_pose_info_to_framedata(pose_info : Dict[str, List]) -> FrameData:
+  """
+  PoseInfo, formatted as a Dict[str, List] will contain the following entries:
+    atom_elements - ordered list of atom elements,
+    atom_coords - ordered list of atom coords (shape = (N, 3)),
+    atom_bonds - 1 indexed ordered list of list of bonds of atoms,
+    atom_residues - ordered list of corresponding the residue an atom belongs to
+  """
+  frame = FrameData()
+  frame.arrays["particle.positions"] =  np.array(pose_info["atom_coords"], type=float)
+  frame.arrays["particle.elements"] =   np.array(pose_info["atom_elements"], dtype="U2")
+  frame.arrays["particle.residues"] =   np.array(pose_info["atom_residues"], dtype=int)
+  frame.arrays["bond.pairs"] = _get_bond_pairs_from_pose_info(pose_info["atom_bonds"])
